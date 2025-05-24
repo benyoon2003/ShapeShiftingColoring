@@ -14,7 +14,7 @@ from gridgame import *
 
 ##############################################################################################################################
 
-game = ShapePlacementGrid(GUI=True, render_delay_sec=0.5, gs=6, num_colored_boxes=5)
+game = ShapePlacementGrid(GUI=True, render_delay_sec=0, gs=6, num_colored_boxes=5)
 shapePos, currentShapeIndex, currentColorIndex, grid, placedShapes, done = game.execute('export')
 np.savetxt('initial_grid.txt', grid, fmt="%d")
 
@@ -97,6 +97,8 @@ def adjacencyRulePasses(grid):
     for i in range(gridSize):
         for j in range(gridSize):
             color = grid[i, j]
+            if (color == -1):
+                continue
             if i > 0 and grid[i - 1, j] == color:
                 return False
             if i < gridSize - 1 and grid[i + 1, j] == color:
@@ -117,18 +119,22 @@ def countEmptySpaces(grid):
     return emptySpaces
 
 def moveBrushPosition(x, y):
-    shapePos, currentShapeIndex, currentColorIndex, grid, placedShapes, done = game.execute('export')
-    while (shapePos[0] != x or shapePos[1] != y):
-        if (shapePos[0] < x):
-            shapePos, currentShapeIndex, currentColorIndex, grid, placedShapes, done = game.execute('right')
-        elif (shapePos[0] > x):
-            shapePos, currentShapeIndex, currentColorIndex, grid, placedShapes, done = game.execute('left')
-        if (shapePos[1] < y):
-            shapePos, currentShapeIndex, currentColorIndex, grid, placedShapes, done = game.execute('up')
-        elif (shapePos[1] > y):
-            shapePos, currentShapeIndex, currentColorIndex, grid, placedShapes, done = game.execute('down')
-    return grid
+    while True:
+        shapePos, currentShapeIndex, currentColorIndex, grid, placedShapes, done = game.execute('export')
+        cur_x, cur_y = shapePos
+        print(f"Desired position: ({x}, {y})")
+        print(f"Current position: ({cur_x}, {cur_y})")
 
+        if cur_x < x:
+            game.execute('right')
+        elif cur_x > x:
+            game.execute('left')
+        elif cur_y < y:
+            game.execute('down')
+        elif cur_y > y:
+            game.execute('up')
+        else:
+            break  # We're at the target position
 
 # Loop through each square
 for row in range(len(grid)):
@@ -137,50 +143,54 @@ for row in range(len(grid)):
 
         # Check if it is empty and loop through the brush type and color to find local optima
         if grid[row][col] == -1:
-            brushIterator = 9
+            print(f"Checking position ({row}, {col})")
             bestBrush = None
             bestColor = None
 
             # Move brush position
-            gridBeforePlacing = moveBrushPosition(row, col)
+            moveBrushPosition(col, row)
+            print("hello")
+            shapePos, currentShapeIndex, currentColorIndex, gridBeforePlacing, placedShapes, done = game.execute('export')
+            gridBeforePlacing = np.copy(gridBeforePlacing)
 
             # Iterate through each brush pattern
-            while (brushIterator):
-
-                # Try to place and if the grid has changed, check for adjacency: if it does not pass the adjacency rule then switch color
-                shapePos, currentShapeIndex, currentColorIndex, gridAfterPlacing, placedShapes, done = game.execute('place')
-
-                if not (gridBeforePlacing == gridAfterPlacing).all():
-
-                    if adjacencyRulePasses(gridAfterPlacing):
-                        emptySpacesLeftWithNewPlacement = countEmptySpaces(gridAfterPlacing)
-                        print("Trying new configuration since adjacency rule passes")
-
-                        if (emptySpacesLeftWithNewPlacement < minEmptySpacesLeft):
-                            minEmptySpacesLeft = emptySpacesLeftWithNewPlacement
-                            bestBrush = currentShapeIndex
-                            bestColor = currentColorIndex
-
-                            shapePos, currentShapeIndex, currentColorIndex, grid, placedShapes, done = game.execute('switchshape')
-                            brushIterator = brushIterator - 1
-                            print("New best Brush: " + str(currentShapeIndex))
-                            print("New best Color: " + str(currentColorIndex))
-                    else:
-                        print("Grid fits but color does not work")
-                        shapePos, currentShapeIndex, currentColorIndex, grid, placedShapes, done = game.execute('switchcolor')
-
-                    # Undo since we are not sure that this is the best local solution
-                    shapePos, currentShapeIndex, currentColorIndex, gridAfterPlacing, placedShapes, done = game.execute('undo')
+            for brushIndex in range(9):
+                switchToSpecifiedBrushIndex(brushIndex)
+                
+                # Try each color for this brush
+                for colorIndex in range(4):
+                    switchToSpecifiedColorIndex(colorIndex)
                     
-                else:
-                    print("Shape does not fit")
-                    shapePos, currentShapeIndex, currentColorIndex, grid, placedShapes, done = game.execute('switchshape')
-                    brushIterator = brushIterator - 1
+                    # Try to place and check if the grid has changed
+                    shapePos, currentShapeIndex, currentColorIndex, gridAfterPlacing, placedShapes, done = game.execute('place')
+                    gridAfterPlacing = np.copy(gridAfterPlacing)
 
-            print("Place working shape")
-            switchToSpecifiedBrushIndex(bestBrush)
-            switchToSpecifiedColorIndex(bestColor)
-            shapePos, currentShapeIndex, currentColorIndex, gridAfterPlacing, placedShapes, done = game.execute('place')
+                    if (not (gridBeforePlacing == gridAfterPlacing).all()):
+                        if adjacencyRulePasses(gridAfterPlacing):
+                            emptySpacesLeftWithNewPlacement = countEmptySpaces(gridAfterPlacing)
+                            print(f"Trying brush {brushIndex} with color {colorIndex}")
+
+                            if (emptySpacesLeftWithNewPlacement < minEmptySpacesLeft):
+                                minEmptySpacesLeft = emptySpacesLeftWithNewPlacement
+                                bestBrush = brushIndex
+                                bestColor = colorIndex
+                                print(f"New best Brush: {brushIndex}")
+                                print(f"New best Color: {colorIndex}")
+
+                        # Undo since we are not sure that this is the best local solution
+                        print("Undo")
+                        shapePos, currentShapeIndex, currentColorIndex, gridAfterPlacing, placedShapes, done = game.execute('undo')
+                    else:
+                        print(f"Shape {brushIndex} does not fit at position ({row}, {col})")
+
+            if bestBrush is not None:
+                print(f"Placing working shape ({row}, {col})")
+                switchToSpecifiedBrushIndex(bestBrush)
+                switchToSpecifiedColorIndex(bestColor)
+                shapePos, currentShapeIndex, currentColorIndex, gridAfterPlacing, placedShapes, done = game.execute('place')
+            else:
+                print(f"Grid after placing at ({row} ,{col}):\n{gridAfterPlacing}")
+
 
 
 
