@@ -14,7 +14,7 @@ from gridgame import *
 
 ##############################################################################################################################
 
-game = ShapePlacementGrid(GUI=True, render_delay_sec=0, gs=6, num_colored_boxes=5)
+game = ShapePlacementGrid(GUI=True, render_delay_sec=0, gs=10, num_colored_boxes=5)
 shapePos, currentShapeIndex, currentColorIndex, grid, placedShapes, done = game.execute('export')
 np.savetxt('initial_grid.txt', grid, fmt="%d")
 
@@ -118,78 +118,94 @@ def countEmptySpaces(grid):
                 emptySpaces = emptySpaces + 1
     return emptySpaces
 
-def moveBrushPosition(x, y):
+def moveBrushPosition(row, col):
     while True:
         shapePos, currentShapeIndex, currentColorIndex, grid, placedShapes, done = game.execute('export')
-        cur_x, cur_y = shapePos
-        print(f"Desired position: ({x}, {y})")
-        print(f"Current position: ({cur_x}, {cur_y})")
+        cur_col, cur_row = shapePos
+        # print(f"Desired position: ({row}, {col})")
+        # print(f"Current position: ({cur_row}, {cur_col})")
 
-        if cur_x < x:
+        if cur_col < col:
             game.execute('right')
-        elif cur_x > x:
+        elif cur_col > col:
             game.execute('left')
-        elif cur_y < y:
+        elif cur_row < row:
             game.execute('down')
-        elif cur_y > y:
+        elif cur_row > row:
             game.execute('up')
         else:
             break  # We're at the target position
 
 # Loop through each square
-for row in range(len(grid)):
-    for col in range(len(grid)):
-        minEmptySpacesLeft = len(grid) * len(grid)
+while (not done):
+    for row in range(len(grid)):
+        for col in range(len(grid)):
+            minEmptySpacesLeft = len(grid) * len(grid)
 
-        # Check if it is empty and loop through the brush type and color to find local optima
-        if grid[row][col] == -1:
-            print(f"Checking position ({row}, {col})")
-            bestBrush = None
-            bestColor = None
+            # Check if it is empty and loop through the brush type and color to find local optima
+            if grid[row][col] == -1:
+                # print(f"Checking position ({row}, {col})")
+                bestBrush = None
+                bestColor = None
 
-            # Move brush position
-            moveBrushPosition(col, row)
-            print("hello")
-            shapePos, currentShapeIndex, currentColorIndex, gridBeforePlacing, placedShapes, done = game.execute('export')
-            gridBeforePlacing = np.copy(gridBeforePlacing)
+                # Move brush position
+                switchToSpecifiedBrushIndex(0)
+                moveBrushPosition(row, col)
+                shapePos, currentShapeIndex, currentColorIndex, gridBeforePlacing, placedShapes, done = game.execute('export')
+                gridBeforePlacing = np.copy(gridBeforePlacing)
 
-            # Iterate through each brush pattern
-            for brushIndex in range(9):
-                switchToSpecifiedBrushIndex(brushIndex)
-                
-                # Try each color for this brush
-                for colorIndex in range(4):
-                    switchToSpecifiedColorIndex(colorIndex)
+                # Iterate through each brush pattern
+                for brushIndex in range(9):
+                    if (col == len(grid) - 1 and brushIndex > 0):
+                        continue
+                    elif (col == len(grid) - 2 and brushIndex >= 5):
+                        continue
+                    elif (col == len(grid) - 3 and (brushIndex == 5 or brushIndex == 6)):
+                        continue
+                    if (row == len(grid) - 1 and brushIndex > 0):
+                        continue
+                    elif (row >= len(grid) - 3 and (brushIndex == 3 or brushIndex == 4)):
+                        continue
                     
-                    # Try to place and check if the grid has changed
+                    switchToSpecifiedBrushIndex(brushIndex)
+                    
+                    # Try each color for this brush
+                    for colorIndex in range(4):
+
+                        switchToSpecifiedColorIndex(colorIndex)
+                        
+                        # Try to place and check if the grid has changed
+                        shapePos, currentShapeIndex, currentColorIndex, gridAfterPlacing, placedShapes, done = game.execute('place')
+                        gridAfterPlacing = np.copy(gridAfterPlacing)
+
+                        if (not (gridBeforePlacing == gridAfterPlacing).all()):
+                            if adjacencyRulePasses(gridAfterPlacing):
+                                emptySpacesLeftWithNewPlacement = countEmptySpaces(gridAfterPlacing)
+                                # print(f"Trying brush {brushIndex} with color {colorIndex}")
+
+                                if (emptySpacesLeftWithNewPlacement < minEmptySpacesLeft):
+                                    minEmptySpacesLeft = emptySpacesLeftWithNewPlacement
+                                    bestBrush = brushIndex
+                                    bestColor = colorIndex
+                                    # print(f"New best Brush: {brushIndex}")
+                                    # print(f"New best Color: {colorIndex}")
+                                    # print(f"ShapePos: {shapePos[1]} , {shapePos[0]}")
+                                    # print(gridAfterPlacing)
+
+                            # Undo since we are not sure that this is the best local solution
+                            # print("Undo")
+                            game.execute('undo')
+
+                if bestBrush is not None and bestColor is not None:
+                    #print(f"Placing working shape ({row}, {col})")
+                    switchToSpecifiedBrushIndex(bestBrush)
+                    switchToSpecifiedColorIndex(bestColor)
+                    moveBrushPosition(row, col)
+                    #print(f"{bestBrush}, {bestColor}")
                     shapePos, currentShapeIndex, currentColorIndex, gridAfterPlacing, placedShapes, done = game.execute('place')
-                    gridAfterPlacing = np.copy(gridAfterPlacing)
-
-                    if (not (gridBeforePlacing == gridAfterPlacing).all()):
-                        if adjacencyRulePasses(gridAfterPlacing):
-                            emptySpacesLeftWithNewPlacement = countEmptySpaces(gridAfterPlacing)
-                            print(f"Trying brush {brushIndex} with color {colorIndex}")
-
-                            if (emptySpacesLeftWithNewPlacement < minEmptySpacesLeft):
-                                minEmptySpacesLeft = emptySpacesLeftWithNewPlacement
-                                bestBrush = brushIndex
-                                bestColor = colorIndex
-                                print(f"New best Brush: {brushIndex}")
-                                print(f"New best Color: {colorIndex}")
-
-                        # Undo since we are not sure that this is the best local solution
-                        print("Undo")
-                        shapePos, currentShapeIndex, currentColorIndex, gridAfterPlacing, placedShapes, done = game.execute('undo')
-                    else:
-                        print(f"Shape {brushIndex} does not fit at position ({row}, {col})")
-
-            if bestBrush is not None:
-                print(f"Placing working shape ({row}, {col})")
-                switchToSpecifiedBrushIndex(bestBrush)
-                switchToSpecifiedColorIndex(bestColor)
-                shapePos, currentShapeIndex, currentColorIndex, gridAfterPlacing, placedShapes, done = game.execute('place')
-            else:
-                print(f"Grid after placing at ({row} ,{col}):\n{gridAfterPlacing}")
+                    #print(f"shape position: {shapePos[1]}, {shapePos[0]}")
+                    #print(f"Current shape index: {currentShapeIndex}")
+                    #print(gridAfterPlacing)
 
 
 
