@@ -64,14 +64,6 @@ start = time.time()  # <- do not modify this.
 # Write all your code in the area below. 
 ##########################################
 
-# The intuition: Try to minimize the number of shapes and colors used by starting with a bigger shape and trying to fit shapes of smaller and smaller sizes within
-# the gaps while maintaining the constraint of no adjacent cells of the same color so we must loop through the different shapes as well as the colors at each stage
-# objective function should choose the paint and brush option that results in the least remaining empty spaces
-
-# Method used: Steepest ascent hill climbing
-
-# while loop to stay looping
-
 '''
 
 YOUR CODE HERE
@@ -79,25 +71,29 @@ YOUR CODE HERE
 
 
 '''
+# Method used: Steepest Ascent Hill Climbing
+# Try to minimize the number of shapes used by finding the biggest valid brush shape that fits.
+# In order to minimize the number of colors used, always iterate through the colors in the same manner (e.g. Indigo, Taupe, Viridian...)
 
-# Switch to specified brush pattern
+# Switches to specified brush pattern
 def switchToSpecifiedBrushIndex(desiredIndex):
     shapePos, currentShapeIndex, currentColorIndex, grid, placedShapes, done = game.execute('export')
     while (currentShapeIndex != desiredIndex):
         shapePos, currentShapeIndex, currentColorIndex, grid, placedShapes, done = game.execute('switchshape')
 
+# Switches to specificed color index
 def switchToSpecifiedColorIndex(desiredIndex):
     shapePos, currentShapeIndex, currentColorIndex, grid, placedShapes, done = game.execute('export')
     while (currentColorIndex != desiredIndex):
         shapePos, currentShapeIndex, currentColorIndex, grid, placedShapes, done = game.execute('switchcolor')
 
+# Checks that we are not violating any color adjacency rules
 def adjacencyRulePasses(grid):
-    # Check that no adjacent cells have the same color
     gridSize = len(grid)
     for i in range(gridSize):
         for j in range(gridSize):
             color = grid[i, j]
-            if (color == -1):
+            if (color == -1): # Ignore empty spaces
                 continue
             if i > 0 and grid[i - 1, j] == color:
                 return False
@@ -107,9 +103,9 @@ def adjacencyRulePasses(grid):
                 return False
             if j < gridSize - 1 and grid[i, j + 1] == color:
                 return False
-
     return True
     
+# Counts the empty spaces remaining on the given board
 def countEmptySpaces(grid):
     emptySpaces = 0
     for row in range(len(grid)):
@@ -118,12 +114,11 @@ def countEmptySpaces(grid):
                 emptySpaces = emptySpaces + 1
     return emptySpaces
 
+# Moves the brush position to the given row and column
 def moveBrushPosition(row, col):
     while True:
         shapePos, currentShapeIndex, currentColorIndex, grid, placedShapes, done = game.execute('export')
         cur_col, cur_row = shapePos
-        # print(f"Desired position: ({row}, {col})")
-        # print(f"Current position: ({cur_row}, {cur_col})")
 
         if cur_col < col:
             game.execute('right')
@@ -134,21 +129,24 @@ def moveBrushPosition(row, col):
         elif cur_row > row:
             game.execute('up')
         else:
-            break  # We're at the target position
+            break # We arrived at the correct position
 
-# Loop through each square
+# Don't stop until we are done
 while (not done):
+
+    # Loop through each square on the grid
     for row in range(len(grid)):
         for col in range(len(grid)):
+
+            # This has to be the max empty spaces given a certain grid
             minEmptySpacesLeft = len(grid) * len(grid)
 
             # Check if it is empty and loop through the brush type and color to find local optima
             if grid[row][col] == -1:
-                # print(f"Checking position ({row}, {col})")
                 bestBrush = None
                 bestColor = None
 
-                # Move brush position
+                # Initialize brush position to smallest so we don't have any issues moving brush postion
                 switchToSpecifiedBrushIndex(0)
                 moveBrushPosition(row, col)
                 shapePos, currentShapeIndex, currentColorIndex, gridBeforePlacing, placedShapes, done = game.execute('export')
@@ -156,6 +154,8 @@ while (not done):
 
                 # Iterate through each brush pattern
                 for brushIndex in range(9):
+
+                    # Maintain boundaries so we can skip some computations towards the edges of the grid
                     if (col == len(grid) - 1 and brushIndex > 0):
                         continue
                     elif (col == len(grid) - 2 and brushIndex >= 5):
@@ -169,45 +169,33 @@ while (not done):
                     
                     switchToSpecifiedBrushIndex(brushIndex)
                     
-                    # Try each color for this brush
+                    # Try each color for this brush and always in the same order to minimize colors used
                     for colorIndex in range(4):
-
                         switchToSpecifiedColorIndex(colorIndex)
-                        
-                        # Try to place and check if the grid has changed
                         shapePos, currentShapeIndex, currentColorIndex, gridAfterPlacing, placedShapes, done = game.execute('place')
                         gridAfterPlacing = np.copy(gridAfterPlacing)
 
+                        # We know that the brush pattern and position was valid if the grid changes after it was placed
                         if (not (gridBeforePlacing == gridAfterPlacing).all()):
+
+                            # Check that we pass the color adjacency rule since placing doesn't check for this
                             if adjacencyRulePasses(gridAfterPlacing):
                                 emptySpacesLeftWithNewPlacement = countEmptySpaces(gridAfterPlacing)
-                                # print(f"Trying brush {brushIndex} with color {colorIndex}")
 
+                                # We have arrived at a new best shape and color if we are minimizing the number of empty spaces left
                                 if (emptySpacesLeftWithNewPlacement < minEmptySpacesLeft):
                                     minEmptySpacesLeft = emptySpacesLeftWithNewPlacement
                                     bestBrush = brushIndex
                                     bestColor = colorIndex
-                                    # print(f"New best Brush: {brushIndex}")
-                                    # print(f"New best Color: {colorIndex}")
-                                    # print(f"ShapePos: {shapePos[1]} , {shapePos[0]}")
-                                    # print(gridAfterPlacing)
+                            
+                            game.execute('undo') # Due to Steepest-Ascent Hill Climbing, we do not know that the current shape and color is the best suited yet
 
-                            # Undo since we are not sure that this is the best local solution
-                            # print("Undo")
-                            game.execute('undo')
-
+                # We have tested and arrived at the best shape and color
                 if bestBrush is not None and bestColor is not None:
-                    #print(f"Placing working shape ({row}, {col})")
                     switchToSpecifiedBrushIndex(bestBrush)
                     switchToSpecifiedColorIndex(bestColor)
                     moveBrushPosition(row, col)
-                    #print(f"{bestBrush}, {bestColor}")
                     shapePos, currentShapeIndex, currentColorIndex, gridAfterPlacing, placedShapes, done = game.execute('place')
-                    #print(f"shape position: {shapePos[1]}, {shapePos[0]}")
-                    #print(f"Current shape index: {currentShapeIndex}")
-                    #print(gridAfterPlacing)
-
-
 
 
 ########################################
